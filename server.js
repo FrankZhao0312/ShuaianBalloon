@@ -43,17 +43,13 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiries (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`);
 
-// 邮件发送器配置（不变）
+// 邮件发送器配置
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
   secure: true,
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
-
-// ------------------- API接口（完全不变）-------------------
-// 【关键修改1】数据库路径改成 Render 可写的 /tmp 目录
-const db = new DatabaseSync('/tmp/database.db');
 
 // 1. 联系表单提交接口
 app.post('/api/contact', (req, res) => {
@@ -84,7 +80,7 @@ app.post('/api/contact', (req, res) => {
       res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
     });
   } catch (err) {
-    // 【关键修改2】添加错误日志
+    // 添加错误日志
     console.error('❌ 联系表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
   }
@@ -140,7 +136,7 @@ app.post('/api/inquiry', (req, res) => {
       res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
     });
   } catch (err) {
-    // 【关键修改2】添加错误日志
+    // 添加错误日志
     console.error('❌ 询价表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
   }
