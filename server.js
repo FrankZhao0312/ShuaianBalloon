@@ -1,7 +1,8 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
+// 替换：使用 Node 内置数据库，无需安装 sqlite3
+const { DatabaseSync } = require('node:sqlite');
 const nodemailer = require('nodemailer');
 
 const app = express();
@@ -11,41 +12,38 @@ const port = process.env.PORT || 3000;
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
-// 初始化数据库（自动创建两个表单表）
-const db = new sqlite3.Database('./database.db', (err) => {
-  if (err) return console.error('❌ 数据库连接失败:', err);
-  console.log('✅ 数据库连接成功');
-  
-  // 联系表单表
-  db.run(`CREATE TABLE IF NOT EXISTS contacts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    company TEXT,
-    phone TEXT,
-    message TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-  
-  // 询价表单表（适配你的Inquiry.vue字段）
-  db.run(`CREATE TABLE IF NOT EXISTS inquiries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    contact_name TEXT NOT NULL,
-    company_name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    whatsapp_wechat TEXT,
-    country_region TEXT NOT NULL,
-    business_type TEXT NOT NULL,
-    product_series TEXT NOT NULL,
-    quantity TEXT,
-    custom_requirement TEXT,
-    message TEXT,
-    sample_request INTEGER DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  )`);
-});
+// ===================== 修复：内置数据库（零依赖，全平台兼容）=====================
+const db = new DatabaseSync('./database.db');
+console.log('✅ 数据库连接成功');
 
-// 邮件发送器配置
+// 自动创建表（和原来逻辑完全一样）
+db.exec(`CREATE TABLE IF NOT EXISTS contacts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  company TEXT,
+  phone TEXT,
+  message TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+db.exec(`CREATE TABLE IF NOT EXISTS inquiries (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_name TEXT NOT NULL,
+  company_name TEXT NOT NULL,
+  email TEXT NOT NULL,
+  whatsapp_wechat TEXT,
+  country_region TEXT NOT NULL,
+  business_type TEXT NOT NULL,
+  product_series TEXT NOT NULL,
+  quantity TEXT,
+  custom_requirement TEXT,
+  message TEXT,
+  sample_request INTEGER DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`);
+
+// 邮件发送器配置（不变）
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
   port: process.env.EMAIL_PORT,
@@ -53,16 +51,16 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
-// ------------------- API接口 -------------------
-// 1. 联系表单提交接口（对应Contact.vue）
+// ------------------- API接口（完全不变）-------------------
+// 1. 联系表单提交接口
 app.post('/api/contact', (req, res) => {
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
-  // 保存到数据库
-  const stmt = db.prepare(`INSERT INTO contacts (name, email, company, phone, message) VALUES (?, ?, ?, ?, ?)`);
-  stmt.run(name, email, company, phone, message, function(err) {
-    if (err) return res.status(500).json({ error: 'Failed to save data' });
+  try {
+    // 保存到数据库
+    db.run(`INSERT INTO contacts (name, email, company, phone, message) VALUES (?, ?, ?, ?, ?)`,
+      [name, email, company, phone, message]);
 
     // 发送邮件通知
     transporter.sendMail({
@@ -82,75 +80,63 @@ app.post('/api/contact', (req, res) => {
       if (err) console.error('❌ 邮件发送失败:', err);
       res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
     });
-  });
-  stmt.finalize();
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to save data' });
+  }
 });
 
-// 2. 询价表单提交接口（对应Inquiry.vue）
+// 2. 询价表单提交接口
 app.post('/api/inquiry', (req, res) => {
-  const { 
-    contactName, 
-    companyName, 
-    email, 
-    whatsapp, 
-    country, 
-    businessType, 
-    products, 
-    quantity, 
-    custom, 
-    message, 
-    sampleRequest 
+  const {
+    contactName,
+    companyName,
+    email,
+    whatsapp,
+    country,
+    businessType,
+    products,
+    quantity,
+    custom,
+    message,
+    sampleRequest
   } = req.body;
-  
-  // 校验必填字段
+
   if (!contactName || !companyName || !email || !country || !businessType || !products) {
     return res.status(400).json({ error: 'Please fill in all required fields' });
   }
 
-  // 保存到数据库
-  const stmt = db.prepare(`INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-  stmt.run(
-    contactName, 
-    companyName, 
-    email, 
-    whatsapp, 
-    country, 
-    businessType, 
-    products, 
-    quantity, 
-    custom, 
-    message, 
-    sampleRequest ? 1 : 0, 
-    function(err) {
-      if (err) return res.status(500).json({ error: 'Failed to save data' });
+  try {
+    // 保存到数据库
+    db.run(`INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0]);
 
-      // 发送邮件通知
-      transporter.sendMail({
-        from: `"Shuaian Balloons 询价通知" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_TO,
-        subject: '💰 新的客户询价请求！',
-        html: `
-          <h3>收到新的客户询价</h3>
-          <p><strong>联系人：</strong>${contactName}</p>
-          <p><strong>公司名称：</strong>${companyName}</p>
-          <p><strong>邮箱：</strong>${email}</p>
-          <p><strong>WhatsApp/微信：</strong>${whatsapp || '未填写'}</p>
-          <p><strong>国家/地区：</strong>${country}</p>
-          <p><strong>业务类型：</strong>${businessType}</p>
-          <p><strong>感兴趣的产品：</strong>${products}</p>
-          <p><strong>预计数量：</strong>${quantity || '未填写'}</p>
-          <p><strong>定制需求：</strong>${custom}</p>
-          <p><strong>是否需要样品：</strong>${sampleRequest ? '是' : '否'}</p>
-          <p><strong>详细需求：</strong>${message || '未填写'}</p>
-          <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
-        `
-      }, (err) => {
-        if (err) console.error('❌ 邮件发送失败:', err);
-        res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
-      });
-    }
-  );
-  stmt.finalize();
+    // 发送邮件通知
+    transporter.sendMail({
+      from: `"Shuaian Balloons 询价通知" <${process.env.EMAIL_USER}>`,
+      to: process.env.EMAIL_TO,
+      subject: '💰 新的客户询价请求！',
+      html: `
+        <h3>收到新的客户询价</h3>
+        <p><strong>联系人：</strong>${contactName}</p>
+        <p><strong>公司名称：</strong>${companyName}</p>
+        <p><strong>邮箱：</strong>${email}</p>
+        <p><strong>WhatsApp/微信：</strong>${whatsapp || '未填写'}</p>
+        <p><strong>国家/地区：</strong>${country}</p>
+        <p><strong>业务类型：</strong>${businessType}</p>
+        <p><strong>感兴趣的产品：</strong>${products}</p>
+        <p><strong>预计数量：</strong>${quantity || '未填写'}</p>
+        <p><strong>定制需求：</strong>${custom}</p>
+        <p><strong>是否需要样品：</strong>${sampleRequest ? '是' : '否'}</p>
+        <p><strong>详细需求：</strong>${message || '未填写'}</p>
+        <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+      `
+    }, (err) => {
+      if (err) console.error('❌ 邮件发送失败:', err);
+      res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
+    });
+  } catch (err) {
+    return res.status(500).json({ error: 'Failed to save data' });
+  }
 });
 
 // 启动服务器
