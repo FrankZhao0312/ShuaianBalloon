@@ -13,7 +13,7 @@ app.use(cors({ origin: process.env.ALLOWED_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
 // ===================== 修复：内置数据库（零依赖，全平台兼容）=====================
-const db = new DatabaseSync('./database.db');
+const db = new DatabaseSync('/tmp/database.db');
 console.log('✅ 数据库连接成功');
 
 // 自动创建表（和原来逻辑完全一样）
@@ -52,6 +52,9 @@ const transporter = nodemailer.createTransport({
 });
 
 // ------------------- API接口（完全不变）-------------------
+// 【关键修改1】数据库路径改成 Render 可写的 /tmp 目录
+const db = new DatabaseSync('/tmp/database.db');
+
 // 1. 联系表单提交接口
 app.post('/api/contact', (req, res) => {
   const { name, email, company, phone, message } = req.body;
@@ -81,6 +84,8 @@ app.post('/api/contact', (req, res) => {
       res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
     });
   } catch (err) {
+    // 【关键修改2】添加错误日志
+    console.error('❌ 联系表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
   }
 });
@@ -135,6 +140,8 @@ app.post('/api/inquiry', (req, res) => {
       res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
     });
   } catch (err) {
+    // 【关键修改2】添加错误日志
+    console.error('❌ 询价表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
   }
 });
