@@ -1,7 +1,6 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-// 替换：使用 Node 内置数据库，无需安装 sqlite3
 const { DatabaseSync } = require('node:sqlite');
 const nodemailer = require('nodemailer');
 
@@ -12,11 +11,11 @@ const port = process.env.PORT || 3000;
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
-// ===================== 修复：内置数据库（零依赖，全平台兼容）=====================
+// ===================== 数据库初始化（/tmp目录，Render可写）=====================
 const db = new DatabaseSync('/tmp/database.db');
 console.log('✅ 数据库连接成功');
 
-// 自动创建表（和原来逻辑完全一样）
+// 自动创建表
 db.exec(`CREATE TABLE IF NOT EXISTS contacts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
@@ -51,15 +50,15 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
-// 1. 联系表单提交接口
+// 1. 联系表单提交接口（修正db.run错误）
 app.post('/api/contact', (req, res) => {
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
   try {
-    // 保存到数据库
-    db.run(`INSERT INTO contacts (name, email, company, phone, message) VALUES (?, ?, ?, ?, ?)`,
-      [name, email, company, phone, message]);
+    // ✅ 正确写法：使用prepare()和run()执行参数化查询
+    const stmt = db.prepare(`INSERT INTO contacts (name, email, company, phone, message) VALUES (?, ?, ?, ?, ?)`);
+    stmt.run(name, email, company, phone, message);
 
     // 发送邮件通知
     transporter.sendMail({
@@ -80,13 +79,12 @@ app.post('/api/contact', (req, res) => {
       res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
     });
   } catch (err) {
-    // 添加错误日志
     console.error('❌ 联系表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
   }
 });
 
-// 2. 询价表单提交接口
+// 2. 询价表单提交接口（修正db.run错误）
 app.post('/api/inquiry', (req, res) => {
   const {
     contactName,
@@ -107,9 +105,9 @@ app.post('/api/inquiry', (req, res) => {
   }
 
   try {
-    // 保存到数据库
-    db.run(`INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0]);
+    // ✅ 正确写法：使用prepare()和run()执行参数化查询
+    const stmt = db.prepare(`INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    stmt.run(contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0);
 
     // 发送邮件通知
     transporter.sendMail({
@@ -136,7 +134,6 @@ app.post('/api/inquiry', (req, res) => {
       res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
     });
   } catch (err) {
-    // 添加错误日志
     console.error('❌ 询价表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
   }
