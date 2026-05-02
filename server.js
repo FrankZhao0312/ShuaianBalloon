@@ -70,12 +70,14 @@ app.post('/api/contact', (req, res) => {
     const stmt = db.prepare(`INSERT INTO contacts (name, email, company, phone, message) VALUES (?, ?, ?, ?, ?)`);
     stmt.run(name, email, company, phone, message);
 
-    // 先返回成功响应，邮件异步发送（不阻塞请求）
-    res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
-
-    // 异步发送邮件通知
-    setTimeout(() => {
-      transporter.sendMail({
+    console.log('📧 开始发送邮件...');
+    console.log('📧 发件人:', process.env.EMAIL_USER);
+    console.log('📧 收件人:', process.env.EMAIL_TO);
+    console.log('📧 SMTP服务器:', process.env.EMAIL_HOST, ':', process.env.EMAIL_PORT);
+    
+    // 同步发送邮件（确保能看到完整日志）
+    try {
+      await transporter.sendMail({
         from: `"Shuaian Balloons 网站通知" <${process.env.EMAIL_USER}>`,
         to: process.env.EMAIL_TO,
         subject: '📩 新的客户联系表单提交',
@@ -88,14 +90,15 @@ app.post('/api/contact', (req, res) => {
           <p><strong>留言：</strong>${message}</p>
           <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
         `
-      }, (err) => {
-        if (err) {
-          console.error('❌ 邮件发送失败:', err);
-        } else {
-          console.log('✅ 邮件发送成功');
-        }
       });
-    }, 100);
+      console.log('✅ 邮件发送成功');
+    } catch (mailErr) {
+      console.error('❌ 邮件发送失败:', mailErr);
+      console.error('❌ 错误详情:', mailErr.code, mailErr.message);
+    }
+    
+    // 返回成功响应
+    res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
 
   } catch (err) {
     console.error('❌ 联系表单数据库写入失败:', err);
