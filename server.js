@@ -7,23 +7,10 @@ const nodemailer = require('nodemailer');
 const app = express();
 const port = process.env.PORT || 3000;
 
-// 中间件配置 - 支持多个域名的CORS
-const allowedOrigins = [
-  'https://shuaianballoon.com',
-  'https://project-mcg87.vercel.app',
-  'http://localhost:5173',
-  'http://localhost:3000'
-];
-
-app.use(cors({ 
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }, 
-  credentials: true 
+// 中间件配置 - 简化CORS配置，确保所有来源都能访问
+app.use(cors({
+  origin: true,
+  credentials: true
 }));
 app.use(express.json({ limit: '1mb' }));
 
@@ -66,8 +53,14 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
+// 根路径测试路由
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', message: 'Shuaian Balloon API is running!' });
+});
+
 // 1. 联系表单提交接口（修正db.run错误）
 app.post('/api/contact', (req, res) => {
+  console.log('📨 收到联系表单提交:', req.body);
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
@@ -102,6 +95,7 @@ app.post('/api/contact', (req, res) => {
 
 // 2. 询价表单提交接口（修正db.run错误）
 app.post('/api/inquiry', (req, res) => {
+  console.log('💰 收到询价表单提交:', req.body);
   const {
     contactName,
     companyName,
