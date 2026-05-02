@@ -63,31 +63,11 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Shuaian Balloon API is running!' });
 });
 
-// 邮件发送辅助函数（带超时控制）
+// 邮件发送辅助函数（当前跳过邮件发送，因为Render网络限制）
 const sendEmailWithTimeout = async (options) => {
-  console.log('📧 开始发送邮件...');
-  console.log('📧 发件人:', process.env.EMAIL_USER);
-  console.log('📧 收件人:', process.env.EMAIL_TO);
-  console.log('📧 SMTP服务器:', process.env.EMAIL_HOST, ':', process.env.EMAIL_PORT);
-  
-  try {
-    // 设置5秒超时
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('邮件发送超时')), 5000);
-    });
-    
-    const sendPromise = transporter.sendMail({
-      from: `"Shuaian Balloons" <${process.env.EMAIL_USER}>`,
-      to: process.env.EMAIL_TO,
-      ...options
-    });
-    
-    // 竞态：谁先完成就用谁的结果
-    await Promise.race([sendPromise, timeoutPromise]);
-    console.log('✅ 邮件发送成功');
-  } catch (err) {
-    console.error('❌ 邮件发送失败:', err.message);
-  }
+  console.log('📧 邮件发送功能已跳过（Render网络限制）');
+  console.log('📧 如需启用邮件功能，请使用SendGrid等第三方邮件服务');
+  console.log('📧 表单数据已保存到数据库');
 };
 
 // 1. 联系表单提交接口（修正db.run错误）
@@ -185,6 +165,40 @@ app.post('/api/inquiry', (req, res) => {
   } catch (err) {
     console.error('❌ 询价表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
+  }
+});
+
+// 密码验证中间件
+const authenticate = (req, res, next) => {
+  const password = req.query.password || req.headers['x-admin-password'];
+  if (password === process.env.ADMIN_PASSWORD) {
+    next();
+  } else {
+    res.status(401).json({ error: 'Unauthorized: Invalid password' });
+  }
+};
+
+// 3. 查询联系表单数据（管理员接口，需要密码）
+app.get('/api/contacts', authenticate, (req, res) => {
+  try {
+    const stmt = db.prepare(`SELECT * FROM contacts ORDER BY created_at DESC`);
+    const contacts = stmt.all();
+    res.json({ success: true, data: contacts });
+  } catch (err) {
+    console.error('❌ 查询联系表单数据失败:', err);
+    return res.status(500).json({ error: 'Failed to fetch data' });
+  }
+});
+
+// 4. 查询询价表单数据（管理员接口，需要密码）
+app.get('/api/inquiries', authenticate, (req, res) => {
+  try {
+    const stmt = db.prepare(`SELECT * FROM inquiries ORDER BY created_at DESC`);
+    const inquiries = stmt.all();
+    res.json({ success: true, data: inquiries });
+  } catch (err) {
+    console.error('❌ 查询询价表单数据失败:', err);
+    return res.status(500).json({ error: 'Failed to fetch data' });
   }
 });
 
