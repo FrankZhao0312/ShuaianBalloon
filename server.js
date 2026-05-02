@@ -48,8 +48,12 @@ db.exec(`CREATE TABLE IF NOT EXISTS inquiries (
 // 邮件发送器配置
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: true,
+  port: parseInt(process.env.EMAIL_PORT) || 587,
+  secure: parseInt(process.env.EMAIL_PORT) === 465, // 465端口使用SSL，587端口使用TLS
+  requireTLS: parseInt(process.env.EMAIL_PORT) === 587, // 587端口启用TLS
+  tls: {
+    rejectUnauthorized: false // 允许自签名证书
+  },
   family: 4,  // 强制使用 IPv4（解决 Render IPv6 连接问题）
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
