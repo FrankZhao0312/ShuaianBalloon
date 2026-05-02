@@ -60,7 +60,7 @@ app.get('/', (req, res) => {
 });
 
 // 1. 联系表单提交接口（修正db.run错误）
-app.post('/api/contact', (req, res) => {
+app.post('/api/contact', async (req, res) => {
   console.log('📨 收到联系表单提交:', req.body);
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
