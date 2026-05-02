@@ -10,7 +10,7 @@ const port = process.env.PORT || 3000;
 // 中间件配置 - 支持多个域名的CORS
 const allowedOrigins = [
   'https://shuaianballoon.com',
-  'https://radiant-kataifi-9868b7.netlify.app',
+  'https://project-mcg87.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000'
 ];
