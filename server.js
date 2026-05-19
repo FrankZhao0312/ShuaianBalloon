@@ -76,6 +76,39 @@ console.log('✅ 邮件配置已加载:', {
 });
 
 const sendEmail = async (options) => {
+  // 优先尝试 SendGrid（如果配置了）
+  if (process.env.SENDGRID_API_KEY) {
+    try {
+      const emailData = {
+        personalizations: [{ to: [{ email: emailConfig.to }] }],
+        from: { email: emailConfig.from },
+        subject: options.subject,
+        content: [{ type: 'text/html', value: options.html }]
+      };
+
+      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.SENDGRID_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(emailData),
+        timeout: 30000
+      });
+
+      if (response.ok) {
+        console.log('� SendGrid 邮件发送成功');
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error('❌ SendGrid 邮件发送失败:', errorText);
+      }
+    } catch (error) {
+      console.error('❌ SendGrid 邮件发送失败:', error.message || error);
+    }
+  }
+
+  // 尝试 MailChannels（Render 集成）
   try {
     const emailData = {
       personalizations: [{ to: [{ email: emailConfig.to }] }],
@@ -84,29 +117,32 @@ const sendEmail = async (options) => {
       content: [{ type: 'text/html', value: options.html }]
     };
 
-    console.log('📤 正在发送邮件到:', emailConfig.to);
+    console.log('�📤 正在发送邮件到:', emailConfig.to);
 
     const response = await fetch('https://api.mailchannels.net/tx/v1/send', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-MailChannels-Sender': JSON.stringify({ email: emailConfig.from })
       },
       body: JSON.stringify(emailData),
       timeout: 30000
     });
 
     if (response.ok) {
-      console.log('📧 邮件发送成功');
+      console.log('📧 MailChannels 邮件发送成功');
       return true;
     } else {
       const errorText = await response.text();
-      console.error('❌ 邮件发送失败:', errorText);
-      return false;
+      console.error('❌ MailChannels 邮件发送失败:', errorText);
     }
   } catch (error) {
-    console.error('❌ 邮件发送失败:', error.message || error);
-    return false;
+    console.error('❌ MailChannels 邮件发送失败:', error.message || error);
   }
+
+  // 所有方案都失败
+  console.error('❌ 所有邮件发送方案都失败');
+  return false;
 };
 
 // 根路径测试路由
