@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { DatabaseSync } = require('node:sqlite');
+const { Pool } = require('pg');
 const nodemailer = require('nodemailer');
 
 const app = express();
@@ -14,78 +14,105 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '1mb' }));
 
-// ===================== 数据库初始化（/tmp目录，Render可写）=====================
-const db = new DatabaseSync('/tmp/database.db');
-console.log('✅ 数据库连接成功');
+// ===================== PostgreSQL 数据库连接 =====================
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
 
-// 自动创建表
-db.exec(`CREATE TABLE IF NOT EXISTS contacts (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL,
-  company TEXT,
-  phone TEXT,
-  message TEXT NOT NULL,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
+// 初始化数据库表
+const initDatabase = async () => {
+  try {
+    // 创建 contacts 表
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS contacts (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        company TEXT,
+        phone TEXT,
+        message TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-db.exec(`CREATE TABLE IF NOT EXISTS inquiries (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  contact_name TEXT NOT NULL,
-  company_name TEXT NOT NULL,
-  email TEXT NOT NULL,
-  whatsapp_wechat TEXT,
-  country_region TEXT NOT NULL,
-  business_type TEXT NOT NULL,
-  product_series TEXT NOT NULL,
-  quantity TEXT,
-  custom_requirement TEXT,
-  message TEXT,
-  sample_request INTEGER DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)`);
+    // 创建 inquiries 表
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS inquiries (
+        id SERIAL PRIMARY KEY,
+        contact_name TEXT NOT NULL,
+        company_name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        whatsapp_wechat TEXT,
+        country_region TEXT NOT NULL,
+        business_type TEXT NOT NULL,
+        product_series TEXT NOT NULL,
+        quantity TEXT,
+        custom_requirement TEXT,
+        message TEXT,
+        sample_request INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-// 邮件发送器配置
+    console.log('✅ PostgreSQL 数据库表初始化完成');
+  } catch (err) {
+    console.error('❌ 数据库初始化失败:', err);
+  }
+};
+
+// 启动时初始化数据库
+initDatabase();
+
 const transporter = nodemailer.createTransport({
   host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT) || 587,
-  secure: parseInt(process.env.EMAIL_PORT) === 465, // 465端口使用SSL，587端口使用TLS
-  requireTLS: parseInt(process.env.EMAIL_PORT) === 587, // 587端口启用TLS
-  tls: {
-    rejectUnauthorized: false // 允许自签名证书
-  },
-  family: 4,  // 强制使用 IPv4（解决 Render IPv6 连接问题）
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+  port: process.env.EMAIL_PORT,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
 });
+
+const sendEmail = async (options) => {
+  try {
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_TO,
+      subject: options.subject,
+      html: options.html
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('📧 邮件发送成功:', info.messageId);
+  } catch (error) {
+    console.error('❌ 邮件发送失败:', error);
+  }
+};
 
 // 根路径测试路由
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Shuaian Balloon API is running!' });
 });
 
-// 邮件发送辅助函数（当前跳过邮件发送，因为Render网络限制）
-const sendEmailWithTimeout = async (options) => {
-  console.log('📧 邮件发送功能已跳过（Render网络限制）');
-  console.log('📧 如需启用邮件功能，请使用SendGrid等第三方邮件服务');
-  console.log('📧 表单数据已保存到数据库');
-};
-
-// 1. 联系表单提交接口（修正db.run错误）
+// 1. 联系表单提交接口
 app.post('/api/contact', async (req, res) => {
   console.log('📨 收到联系表单提交:', req.body);
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
   try {
-    // ✅ 正确写法：使用prepare()和run()执行参数化查询
-    const stmt = db.prepare(`INSERT INTO contacts (name, email, company, phone, message) VALUES (?, ?, ?, ?, ?)`);
-    stmt.run(name, email, company, phone, message);
+    // 使用 PostgreSQL 参数化查询
+    await pool.query(
+      'INSERT INTO contacts (name, email, company, phone, message) VALUES ($1, $2, $3, $4, $5)',
+      [name, email, company, phone, message]
+    );
 
-    // 返回成功响应（不等待邮件发送）
+    // 返回成功响应
     res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
 
-    // 异步发送邮件（带超时控制）
-    sendEmailWithTimeout({
+    // 异步发送邮件通知
+    sendEmail({
       subject: '📩 新的客户联系表单提交',
       html: `
         <h3>收到新的客户联系</h3>
@@ -104,8 +131,8 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
-// 2. 询价表单提交接口（修正db.run错误）
-app.post('/api/inquiry', (req, res) => {
+// 2. 询价表单提交接口
+app.post('/api/inquiry', async (req, res) => {
   console.log('💰 收到询价表单提交:', req.body);
   const {
     contactName,
@@ -126,42 +153,35 @@ app.post('/api/inquiry', (req, res) => {
   }
 
   try {
-    // ✅ 正确写法：使用prepare()和run()执行参数化查询
-    const stmt = db.prepare(`INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    stmt.run(contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0);
+    // 使用 PostgreSQL 参数化查询
+    await pool.query(
+      'INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+      [contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0]
+    );
 
-    // 先返回成功响应，邮件异步发送（不阻塞请求）
+    // 先返回成功响应
     res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
 
     // 异步发送邮件通知
-    setTimeout(() => {
-      transporter.sendMail({
-        from: `"Shuaian Balloons 询价通知" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_TO,
-        subject: '💰 新的客户询价请求！',
-        html: `
-          <h3>收到新的客户询价</h3>
-          <p><strong>联系人：</strong>${contactName}</p>
-          <p><strong>公司名称：</strong>${companyName}</p>
-          <p><strong>邮箱：</strong>${email}</p>
-          <p><strong>WhatsApp/微信：</strong>${whatsapp || '未填写'}</p>
-          <p><strong>国家/地区：</strong>${country}</p>
-          <p><strong>业务类型：</strong>${businessType}</p>
-          <p><strong>感兴趣的产品：</strong>${products}</p>
-          <p><strong>预计数量：</strong>${quantity || '未填写'}</p>
-          <p><strong>定制需求：</strong>${custom}</p>
-          <p><strong>是否需要样品：</strong>${sampleRequest ? '是' : '否'}</p>
-          <p><strong>详细需求：</strong>${message || '未填写'}</p>
-          <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
-        `
-      }, (err) => {
-        if (err) {
-          console.error('❌ 邮件发送失败:', err);
-        } else {
-          console.log('✅ 邮件发送成功');
-        }
-      });
-    }, 100);
+    sendEmail({
+      subject: '💰 新的客户询价请求！',
+      html: `
+        <h3>收到新的客户询价</h3>
+        <p><strong>联系人：</strong>${contactName}</p>
+        <p><strong>公司名称：</strong>${companyName}</p>
+        <p><strong>邮箱：</strong>${email}</p>
+        <p><strong>WhatsApp/微信：</strong>${whatsapp || '未填写'}</p>
+        <p><strong>国家/地区：</strong>${country}</p>
+        <p><strong>业务类型：</strong>${businessType}</p>
+        <p><strong>感兴趣的产品：</strong>${products}</p>
+        <p><strong>预计数量：</strong>${quantity || '未填写'}</p>
+        <p><strong>定制需求：</strong>${custom}</p>
+        <p><strong>是否需要样品：</strong>${sampleRequest ? '是' : '否'}</p>
+        <p><strong>详细需求：</strong>${message || '未填写'}</p>
+        <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+      `
+    });
+
   } catch (err) {
     console.error('❌ 询价表单数据库写入失败:', err);
     return res.status(500).json({ error: 'Failed to save data' });
@@ -179,11 +199,10 @@ const authenticate = (req, res, next) => {
 };
 
 // 3. 查询联系表单数据（管理员接口，需要密码）
-app.get('/api/contacts', authenticate, (req, res) => {
+app.get('/api/contacts', authenticate, async (req, res) => {
   try {
-    const stmt = db.prepare(`SELECT * FROM contacts ORDER BY created_at DESC`);
-    const contacts = stmt.all();
-    res.json({ success: true, data: contacts });
+    const result = await pool.query('SELECT * FROM contacts ORDER BY created_at DESC');
+    res.json({ success: true, data: result.rows });
   } catch (err) {
     console.error('❌ 查询联系表单数据失败:', err);
     return res.status(500).json({ error: 'Failed to fetch data' });
@@ -191,11 +210,10 @@ app.get('/api/contacts', authenticate, (req, res) => {
 });
 
 // 4. 查询询价表单数据（管理员接口，需要密码）
-app.get('/api/inquiries', authenticate, (req, res) => {
+app.get('/api/inquiries', authenticate, async (req, res) => {
   try {
-    const stmt = db.prepare(`SELECT * FROM inquiries ORDER BY created_at DESC`);
-    const inquiries = stmt.all();
-    res.json({ success: true, data: inquiries });
+    const result = await pool.query('SELECT * FROM inquiries ORDER BY created_at DESC');
+    res.json({ success: true, data: result.rows });
   } catch (err) {
     console.error('❌ 查询询价表单数据失败:', err);
     return res.status(500).json({ error: 'Failed to fetch data' });
