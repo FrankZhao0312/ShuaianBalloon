@@ -66,35 +66,29 @@ initDatabase();
 
 // 邮件发送配置
 const emailConfig = {
-  sendgridApiKey: process.env.SENDGRID_API_KEY,
-  sendgridFrom: process.env.SENDGRID_FROM || 'no-reply@shuaianballoon.com',
-  to: process.env.EMAIL_TO || process.env.SENDGRID_TO || '89737892@qq.com'
+  from: process.env.EMAIL_FROM || 'no-reply@shuaianballoon.com',
+  to: process.env.EMAIL_TO || '89737892@qq.com'
 };
 
 console.log('✅ 邮件配置已加载:', {
-  sendgridConfigured: !!emailConfig.sendgridApiKey,
-  from: emailConfig.sendgridFrom,
+  from: emailConfig.from,
   to: emailConfig.to
 });
 
 const sendEmail = async (options) => {
-  if (!emailConfig.sendgridApiKey) {
-    console.warn('⚠️ 邮件发送被跳过：未配置 SendGrid API Key');
-    return;
-  }
-  
   try {
     const emailData = {
       personalizations: [{ to: [{ email: emailConfig.to }] }],
-      from: { email: emailConfig.sendgridFrom },
+      from: { email: emailConfig.from },
       subject: options.subject,
       content: [{ type: 'text/html', value: options.html }]
     };
 
-    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    console.log('📤 正在发送邮件到:', emailConfig.to);
+
+    const response = await fetch('https://api.mailchannels.net/tx/v1/send', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${emailConfig.sendgridApiKey}`,
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(emailData),
@@ -124,20 +118,11 @@ app.get('/', (req, res) => {
 app.get('/api/test-email', async (req, res) => {
   // 检查邮件配置
   const configCheck = {
-    SENDGRID_API_KEY: emailConfig.sendgridApiKey ? '✅ 已配置' : '❌ 未配置',
-    SENDGRID_FROM: emailConfig.sendgridFrom ? '✅ 已配置' : '❌ 未配置',
+    EMAIL_FROM: emailConfig.from ? '✅ 已配置' : '❌ 未配置',
     EMAIL_TO: emailConfig.to ? '✅ 已配置' : '❌ 未配置'
   };
 
   console.log('📋 邮件配置检查:', configCheck);
-
-  if (!emailConfig.sendgridApiKey) {
-    return res.json({ 
-      success: false, 
-      message: '未配置 SendGrid API Key',
-      config: configCheck 
-    });
-  }
 
   // 尝试发送测试邮件
   const result = await sendEmail({
