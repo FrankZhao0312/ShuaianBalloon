@@ -107,6 +107,64 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Shuaian Balloon API is running!' });
 });
 
+// 邮件测试端点
+app.get('/api/test-email', async (req, res) => {
+  try {
+    // 检查邮件配置
+    const configCheck = {
+      EMAIL_HOST: process.env.EMAIL_HOST ? '✅ 已配置' : '❌ 未配置',
+      EMAIL_PORT: process.env.EMAIL_PORT ? '✅ 已配置' : '❌ 未配置',
+      EMAIL_USER: process.env.EMAIL_USER ? '✅ 已配置' : '❌ 未配置',
+      EMAIL_PASS: process.env.EMAIL_PASS ? '✅ 已配置' : '❌ 未配置',
+      EMAIL_TO: process.env.EMAIL_TO ? '✅ 已配置' : '❌ 未配置',
+      transporterReady: transporter ? '✅ 已就绪' : '❌ 未就绪'
+    };
+
+    console.log('📋 邮件配置检查:', configCheck);
+
+    if (!transporter) {
+      return res.json({ 
+        success: false, 
+        message: '邮件传输器未初始化',
+        config: configCheck 
+      });
+    }
+
+    // 尝试发送测试邮件
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_TO || process.env.EMAIL_USER,
+      subject: '📩 测试邮件发送',
+      html: '<h3>这是一封测试邮件</h3><p>邮件发送功能测试成功！</p>'
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('📧 测试邮件发送成功:', info.messageId);
+
+    res.json({ 
+      success: true, 
+      message: '测试邮件发送成功！',
+      messageId: info.messageId,
+      config: configCheck 
+    });
+
+  } catch (error) {
+    console.error('❌ 测试邮件发送失败:', error);
+    res.json({ 
+      success: false, 
+      message: '邮件发送失败: ' + (error.message || error),
+      config: {
+        EMAIL_HOST: process.env.EMAIL_HOST ? '✅ 已配置' : '❌ 未配置',
+        EMAIL_PORT: process.env.EMAIL_PORT ? '✅ 已配置' : '❌ 未配置',
+        EMAIL_USER: process.env.EMAIL_USER ? '✅ 已配置' : '❌ 未配置',
+        EMAIL_PASS: process.env.EMAIL_PASS ? '✅ 已配置' : '❌ 未配置',
+        EMAIL_TO: process.env.EMAIL_TO ? '✅ 已配置' : '❌ 未配置',
+        transporterReady: transporter ? '✅ 已就绪' : '❌ 未就绪'
+      }
+    });
+  }
+});
+
 // 1. 联系表单提交接口
 app.post('/api/contact', async (req, res) => {
   console.log('📨 收到联系表单提交:', req.body);
