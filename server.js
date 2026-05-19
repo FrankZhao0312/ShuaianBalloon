@@ -64,7 +64,7 @@ const initDatabase = async () => {
 // 启动时初始化数据库
 initDatabase();
 
-// 创建邮件传输器（带错误处理）
+// 创建邮件传输器（带错误处理和超时配置）
 let transporter = null;
 if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
   transporter = nodemailer.createTransport({
@@ -74,7 +74,10 @@ if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) 
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
-    }
+    },
+    connectionTimeout: 10000,  // 连接超时 10 秒
+    greetingTimeout: 10000,     // 问候超时 10 秒
+    socketTimeout: 20000        // 套接字超时 20 秒
   });
   console.log('✅ 邮件传输器初始化成功');
 } else {
