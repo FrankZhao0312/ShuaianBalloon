@@ -64,56 +64,54 @@ const initDatabase = async () => {
 // 启动时初始化数据库
 initDatabase();
 
-// 创建邮件传输器（支持 SendGrid 和标准 SMTP）
-let transporter = null;
-if (process.env.SENDGRID_API_KEY) {
-  // 使用 SendGrid
-  transporter = nodemailer.createTransport({
-    service: 'SendGrid',
-    auth: {
-      user: 'apikey',
-      pass: process.env.SENDGRID_API_KEY
-    }
-  });
-  console.log('✅ SendGrid 邮件传输器初始化成功');
-} else if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
-  // 使用标准 SMTP
-  transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT) || 465,
-    secure: true,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 20000,
-    family: 4
-  });
-  console.log('✅ SMTP 邮件传输器初始化成功');
-} else {
-  console.warn('⚠️ 邮件配置不完整，邮件发送功能已禁用');
-}
+// 邮件发送配置
+const emailConfig = {
+  sendgridApiKey: process.env.SENDGRID_API_KEY,
+  sendgridFrom: process.env.SENDGRID_FROM || 'no-reply@shuaianballoon.com',
+  to: process.env.EMAIL_TO || process.env.SENDGRID_TO || '89737892@qq.com'
+};
+
+console.log('✅ 邮件配置已加载:', {
+  sendgridConfigured: !!emailConfig.sendgridApiKey,
+  from: emailConfig.sendgridFrom,
+  to: emailConfig.to
+});
 
 const sendEmail = async (options) => {
-  if (!transporter) {
-    console.warn('⚠️ 邮件发送被跳过：未配置邮件传输器');
+  if (!emailConfig.sendgridApiKey) {
+    console.warn('⚠️ 邮件发送被跳过：未配置 SendGrid API Key');
     return;
   }
   
   try {
-    const mailOptions = {
-      from: process.env.SENDGRID_FROM || process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO || process.env.SENDGRID_TO || process.env.EMAIL_USER,
+    const emailData = {
+      personalizations: [{ to: [{ email: emailConfig.to }] }],
+      from: { email: emailConfig.sendgridFrom },
       subject: options.subject,
-      html: options.html
+      content: [{ type: 'text/html', value: options.html }]
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('📧 邮件发送成功:', info.messageId);
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${emailConfig.sendgridApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(emailData),
+      timeout: 30000
+    });
+
+    if (response.ok) {
+      console.log('📧 邮件发送成功');
+      return true;
+    } else {
+      const errorText = await response.text();
+      console.error('❌ 邮件发送失败:', errorText);
+      return false;
+    }
   } catch (error) {
     console.error('❌ 邮件发送失败:', error.message || error);
+    return false;
   }
 };
 
@@ -124,58 +122,40 @@ app.get('/', (req, res) => {
 
 // 邮件测试端点
 app.get('/api/test-email', async (req, res) => {
-  try {
-    // 检查邮件配置
-    const configCheck = {
-      EMAIL_HOST: process.env.EMAIL_HOST ? '✅ 已配置' : '❌ 未配置',
-      EMAIL_PORT: process.env.EMAIL_PORT ? '✅ 已配置' : '❌ 未配置',
-      EMAIL_USER: process.env.EMAIL_USER ? '✅ 已配置' : '❌ 未配置',
-      EMAIL_PASS: process.env.EMAIL_PASS ? '✅ 已配置' : '❌ 未配置',
-      EMAIL_TO: process.env.EMAIL_TO ? '✅ 已配置' : '❌ 未配置',
-      transporterReady: transporter ? '✅ 已就绪' : '❌ 未就绪'
-    };
+  // 检查邮件配置
+  const configCheck = {
+    SENDGRID_API_KEY: emailConfig.sendgridApiKey ? '✅ 已配置' : '❌ 未配置',
+    SENDGRID_FROM: emailConfig.sendgridFrom ? '✅ 已配置' : '❌ 未配置',
+    EMAIL_TO: emailConfig.to ? '✅ 已配置' : '❌ 未配置'
+  };
 
-    console.log('📋 邮件配置检查:', configCheck);
+  console.log('📋 邮件配置检查:', configCheck);
 
-    if (!transporter) {
-      return res.json({ 
-        success: false, 
-        message: '邮件传输器未初始化',
-        config: configCheck 
-      });
-    }
+  if (!emailConfig.sendgridApiKey) {
+    return res.json({ 
+      success: false, 
+      message: '未配置 SendGrid API Key',
+      config: configCheck 
+    });
+  }
 
-    // 尝试发送测试邮件
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO || process.env.EMAIL_USER,
-      subject: '📩 测试邮件发送',
-      html: '<h3>这是一封测试邮件</h3><p>邮件发送功能测试成功！</p>'
-    };
+  // 尝试发送测试邮件
+  const result = await sendEmail({
+    subject: '📩 测试邮件发送',
+    html: '<h3>这是一封测试邮件</h3><p>邮件发送功能测试成功！</p>'
+  });
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('📧 测试邮件发送成功:', info.messageId);
-
+  if (result) {
     res.json({ 
       success: true, 
       message: '测试邮件发送成功！',
-      messageId: info.messageId,
       config: configCheck 
     });
-
-  } catch (error) {
-    console.error('❌ 测试邮件发送失败:', error);
+  } else {
     res.json({ 
       success: false, 
-      message: '邮件发送失败: ' + (error.message || error),
-      config: {
-        EMAIL_HOST: process.env.EMAIL_HOST ? '✅ 已配置' : '❌ 未配置',
-        EMAIL_PORT: process.env.EMAIL_PORT ? '✅ 已配置' : '❌ 未配置',
-        EMAIL_USER: process.env.EMAIL_USER ? '✅ 已配置' : '❌ 未配置',
-        EMAIL_PASS: process.env.EMAIL_PASS ? '✅ 已配置' : '❌ 未配置',
-        EMAIL_TO: process.env.EMAIL_TO ? '✅ 已配置' : '❌ 未配置',
-        transporterReady: transporter ? '✅ 已就绪' : '❌ 未就绪'
-      }
+      message: '邮件发送失败',
+      config: configCheck 
     });
   }
 });
@@ -186,50 +166,37 @@ app.post('/api/contact', async (req, res) => {
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
+  // 发送邮件通知
+  const emailResult = await sendEmail({
+    subject: '📩 新的客户联系表单提交',
+    html: `
+      <h3>收到新的客户联系</h3>
+      <p><strong>姓名：</strong>${name}</p>
+      <p><strong>邮箱：</strong>${email}</p>
+      <p><strong>公司：</strong>${company || '未填写'}</p>
+      <p><strong>电话：</strong>${phone || '未填写'}</p>
+      <p><strong>留言：</strong>${message}</p>
+      <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+    `
+  });
+
+  // 保存到数据库
   try {
-    // 先发送邮件通知（同步发送，确保邮件发送成功）
-    if (!transporter) {
-      console.error('❌ 邮件传输器未初始化');
-      return res.status(500).json({ error: '邮件服务未配置，请联系管理员' });
-    }
+    await pool.query(
+      'INSERT INTO contacts (name, email, company, phone, message) VALUES ($1, $2, $3, $4, $5)',
+      [name, email, company, phone, message]
+    );
+    console.log('✅ 联系表单数据已保存到数据库');
+  } catch (dbErr) {
+    console.error('❌ 数据库写入失败:', dbErr);
+  }
 
-    const mailOptions = {
-      from: process.env.SENDGRID_FROM || process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO || process.env.SENDGRID_TO || process.env.EMAIL_USER,
-      subject: '📩 新的客户联系表单提交',
-      html: `
-        <h3>收到新的客户联系</h3>
-        <p><strong>姓名：</strong>${name}</p>
-        <p><strong>邮箱：</strong>${email}</p>
-        <p><strong>公司：</strong>${company || '未填写'}</p>
-        <p><strong>电话：</strong>${phone || '未填写'}</p>
-        <p><strong>留言：</strong>${message}</p>
-        <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
-      `
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-    console.log('📧 邮件发送成功:', info.messageId);
-
-    // 邮件发送成功后再保存到数据库
-    try {
-      await pool.query(
-        'INSERT INTO contacts (name, email, company, phone, message) VALUES ($1, $2, $3, $4, $5)',
-        [name, email, company, phone, message]
-      );
-      console.log('✅ 联系表单数据已保存到数据库');
-    } catch (dbErr) {
-      console.error('❌ 数据库写入失败:', dbErr);
-      // 数据库失败不影响邮件发送结果
-    }
-
+  if (emailResult) {
     res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
-
-  } catch (emailErr) {
-    console.error('❌ 邮件发送失败:', emailErr.message || emailErr);
+  } else {
     res.status(500).json({ 
       success: false, 
-      error: '邮件发送失败: ' + (emailErr.message || emailErr),
+      error: '邮件发送失败',
       message: '提交失败，请稍后重试或直接发送邮件到 sales@shuaianballoon.com' 
     });
   }
@@ -256,8 +223,8 @@ app.post('/api/inquiry', async (req, res) => {
     return res.status(400).json({ error: 'Please fill in all required fields' });
   }
 
-  // 先发送邮件通知（优先保证邮件发送）
-  sendEmail({
+  // 发送邮件通知
+  const emailResult = await sendEmail({
     subject: '💰 新的客户询价请求！',
     html: `
       <h3>收到新的客户询价</h3>
@@ -276,20 +243,25 @@ app.post('/api/inquiry', async (req, res) => {
     `
   });
 
+  // 保存到数据库
   try {
-    // 使用 PostgreSQL 参数化查询
     await pool.query(
       'INSERT INTO inquiries (contact_name, company_name, email, whatsapp_wechat, country_region, business_type, product_series, quantity, custom_requirement, message, sample_request) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
       [contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0]
     );
-
     console.log('✅ 询价表单数据已保存到数据库');
-    res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
-
   } catch (err) {
     console.error('❌ 询价表单数据库写入失败:', err);
-    // 数据库写入失败仍然返回成功，因为邮件已经发送了
+  }
+
+  if (emailResult) {
     res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
+  } else {
+    res.status(500).json({ 
+      success: false, 
+      error: '邮件发送失败',
+      message: '提交失败，请稍后重试或直接发送邮件到 sales@shuaianballoon.com' 
+    });
   }
 });
 
