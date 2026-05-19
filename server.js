@@ -64,21 +64,33 @@ const initDatabase = async () => {
 // 启动时初始化数据库
 initDatabase();
 
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: true,
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  }
-});
+// 创建邮件传输器（带错误处理）
+let transporter = null;
+if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  transporter = nodemailer.createTransport({
+    host: process.env.EMAIL_HOST,
+    port: parseInt(process.env.EMAIL_PORT) || 465,
+    secure: true,
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+  console.log('✅ 邮件传输器初始化成功');
+} else {
+  console.warn('⚠️ 邮件配置不完整，邮件发送功能已禁用');
+}
 
 const sendEmail = async (options) => {
+  if (!transporter) {
+    console.warn('⚠️ 邮件发送被跳过：未配置邮件传输器');
+    return;
+  }
+  
   try {
     const mailOptions = {
       from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO,
+      to: process.env.EMAIL_TO || process.env.EMAIL_USER,
       subject: options.subject,
       html: options.html
     };
@@ -86,7 +98,7 @@ const sendEmail = async (options) => {
     const info = await transporter.sendMail(mailOptions);
     console.log('📧 邮件发送成功:', info.messageId);
   } catch (error) {
-    console.error('❌ 邮件发送失败:', error);
+    console.error('❌ 邮件发送失败:', error.message || error);
   }
 };
 
