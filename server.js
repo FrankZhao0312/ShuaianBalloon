@@ -171,34 +171,52 @@ app.post('/api/contact', async (req, res) => {
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
-  // 先发送邮件通知（优先保证邮件发送）
-  sendEmail({
-    subject: '📩 新的客户联系表单提交',
-    html: `
-      <h3>收到新的客户联系</h3>
-      <p><strong>姓名：</strong>${name}</p>
-      <p><strong>邮箱：</strong>${email}</p>
-      <p><strong>公司：</strong>${company || '未填写'}</p>
-      <p><strong>电话：</strong>${phone || '未填写'}</p>
-      <p><strong>留言：</strong>${message}</p>
-      <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
-    `
-  });
-
   try {
-    // 使用 PostgreSQL 参数化查询
-    await pool.query(
-      'INSERT INTO contacts (name, email, company, phone, message) VALUES ($1, $2, $3, $4, $5)',
-      [name, email, company, phone, message]
-    );
+    // 先发送邮件通知（同步发送，确保邮件发送成功）
+    if (!transporter) {
+      console.error('❌ 邮件传输器未初始化');
+      return res.status(500).json({ error: '邮件服务未配置，请联系管理员' });
+    }
 
-    console.log('✅ 联系表单数据已保存到数据库');
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.EMAIL_TO || process.env.EMAIL_USER,
+      subject: '📩 新的客户联系表单提交',
+      html: `
+        <h3>收到新的客户联系</h3>
+        <p><strong>姓名：</strong>${name}</p>
+        <p><strong>邮箱：</strong>${email}</p>
+        <p><strong>公司：</strong>${company || '未填写'}</p>
+        <p><strong>电话：</strong>${phone || '未填写'}</p>
+        <p><strong>留言：</strong>${message}</p>
+        <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+      `
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('📧 邮件发送成功:', info.messageId);
+
+    // 邮件发送成功后再保存到数据库
+    try {
+      await pool.query(
+        'INSERT INTO contacts (name, email, company, phone, message) VALUES ($1, $2, $3, $4, $5)',
+        [name, email, company, phone, message]
+      );
+      console.log('✅ 联系表单数据已保存到数据库');
+    } catch (dbErr) {
+      console.error('❌ 数据库写入失败:', dbErr);
+      // 数据库失败不影响邮件发送结果
+    }
+
     res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
 
-  } catch (err) {
-    console.error('❌ 联系表单数据库写入失败:', err);
-    // 数据库写入失败仍然返回成功，因为邮件已经发送了
-    res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
+  } catch (emailErr) {
+    console.error('❌ 邮件发送失败:', emailErr.message || emailErr);
+    res.status(500).json({ 
+      success: false, 
+      error: '邮件发送失败: ' + (emailErr.message || emailErr),
+      message: '提交失败，请稍后重试或直接发送邮件到 sales@shuaianballoon.com' 
+    });
   }
 });
 
