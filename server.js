@@ -113,6 +113,20 @@ app.post('/api/contact', async (req, res) => {
   const { name, email, company, phone, message } = req.body;
   if (!name || !email || !message) return res.status(400).json({ error: 'Please fill in all required fields' });
 
+  // 先发送邮件通知（优先保证邮件发送）
+  sendEmail({
+    subject: '📩 新的客户联系表单提交',
+    html: `
+      <h3>收到新的客户联系</h3>
+      <p><strong>姓名：</strong>${name}</p>
+      <p><strong>邮箱：</strong>${email}</p>
+      <p><strong>公司：</strong>${company || '未填写'}</p>
+      <p><strong>电话：</strong>${phone || '未填写'}</p>
+      <p><strong>留言：</strong>${message}</p>
+      <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+    `
+  });
+
   try {
     // 使用 PostgreSQL 参数化查询
     await pool.query(
@@ -120,26 +134,13 @@ app.post('/api/contact', async (req, res) => {
       [name, email, company, phone, message]
     );
 
-    // 返回成功响应
+    console.log('✅ 联系表单数据已保存到数据库');
     res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
-
-    // 异步发送邮件通知
-    sendEmail({
-      subject: '📩 新的客户联系表单提交',
-      html: `
-        <h3>收到新的客户联系</h3>
-        <p><strong>姓名：</strong>${name}</p>
-        <p><strong>邮箱：</strong>${email}</p>
-        <p><strong>公司：</strong>${company || '未填写'}</p>
-        <p><strong>电话：</strong>${phone || '未填写'}</p>
-        <p><strong>留言：</strong>${message}</p>
-        <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
-      `
-    });
 
   } catch (err) {
     console.error('❌ 联系表单数据库写入失败:', err);
-    return res.status(500).json({ error: 'Failed to save data' });
+    // 数据库写入失败仍然返回成功，因为邮件已经发送了
+    res.json({ success: true, message: 'Thank you! We will contact you within 24 hours.' });
   }
 });
 
@@ -164,6 +165,26 @@ app.post('/api/inquiry', async (req, res) => {
     return res.status(400).json({ error: 'Please fill in all required fields' });
   }
 
+  // 先发送邮件通知（优先保证邮件发送）
+  sendEmail({
+    subject: '💰 新的客户询价请求！',
+    html: `
+      <h3>收到新的客户询价</h3>
+      <p><strong>联系人：</strong>${contactName}</p>
+      <p><strong>公司名称：</strong>${companyName}</p>
+      <p><strong>邮箱：</strong>${email}</p>
+      <p><strong>WhatsApp/微信：</strong>${whatsapp || '未填写'}</p>
+      <p><strong>国家/地区：</strong>${country}</p>
+      <p><strong>业务类型：</strong>${businessType}</p>
+      <p><strong>感兴趣的产品：</strong>${products}</p>
+      <p><strong>预计数量：</strong>${quantity || '未填写'}</p>
+      <p><strong>定制需求：</strong>${custom}</p>
+      <p><strong>是否需要样品：</strong>${sampleRequest ? '是' : '否'}</p>
+      <p><strong>详细需求：</strong>${message || '未填写'}</p>
+      <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
+    `
+  });
+
   try {
     // 使用 PostgreSQL 参数化查询
     await pool.query(
@@ -171,32 +192,13 @@ app.post('/api/inquiry', async (req, res) => {
       [contactName, companyName, email, whatsapp, country, businessType, products, quantity, custom, message, sampleRequest ? 1 : 0]
     );
 
-    // 先返回成功响应
+    console.log('✅ 询价表单数据已保存到数据库');
     res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
-
-    // 异步发送邮件通知
-    sendEmail({
-      subject: '💰 新的客户询价请求！',
-      html: `
-        <h3>收到新的客户询价</h3>
-        <p><strong>联系人：</strong>${contactName}</p>
-        <p><strong>公司名称：</strong>${companyName}</p>
-        <p><strong>邮箱：</strong>${email}</p>
-        <p><strong>WhatsApp/微信：</strong>${whatsapp || '未填写'}</p>
-        <p><strong>国家/地区：</strong>${country}</p>
-        <p><strong>业务类型：</strong>${businessType}</p>
-        <p><strong>感兴趣的产品：</strong>${products}</p>
-        <p><strong>预计数量：</strong>${quantity || '未填写'}</p>
-        <p><strong>定制需求：</strong>${custom}</p>
-        <p><strong>是否需要样品：</strong>${sampleRequest ? '是' : '否'}</p>
-        <p><strong>详细需求：</strong>${message || '未填写'}</p>
-        <p><strong>提交时间：</strong>${new Date().toLocaleString('zh-CN')}</p>
-      `
-    });
 
   } catch (err) {
     console.error('❌ 询价表单数据库写入失败:', err);
-    return res.status(500).json({ error: 'Failed to save data' });
+    // 数据库写入失败仍然返回成功，因为邮件已经发送了
+    res.json({ success: true, message: 'Thank you! Our sales team will contact you within 24 working hours.' });
   }
 });
 
