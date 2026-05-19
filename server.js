@@ -76,6 +76,38 @@ console.log('✅ 邮件配置已加载:', {
 });
 
 const sendEmail = async (options) => {
+  // 优先尝试 Resend（如果配置了）
+  if (process.env.RESEND_API_KEY) {
+    try {
+      const emailData = {
+        from: emailConfig.from,
+        to: emailConfig.to,
+        subject: options.subject,
+        html: options.html
+      };
+
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(emailData),
+        timeout: 30000
+      });
+
+      if (response.ok) {
+        console.log('📧 Resend 邮件发送成功');
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error('❌ Resend 邮件发送失败:', errorText);
+      }
+    } catch (error) {
+      console.error('❌ Resend 邮件发送失败:', error.message || error);
+    }
+  }
+
   // 优先尝试标准 SMTP（如果配置了）
   if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
     try {
@@ -149,10 +181,13 @@ const sendEmail = async (options) => {
       personalizations: [{ to: [{ email: emailConfig.to }] }],
       from: { email: emailConfig.from },
       subject: options.subject,
-      content: [{ type: 'text/html', value: options.html }]
+      content: [{ type: 'text/html', value: options.html }],
+      dkim_domain: 'shuaianballoon.com',
+      dkim_selector: 'mc',
+      dkim_private_key: process.env.DKIM_PRIVATE_KEY
     };
 
-    console.log('�� 正在发送邮件到:', emailConfig.to);
+    console.log('📤 正在发送邮件到:', emailConfig.to);
 
     const response = await fetch('https://api.mailchannels.net/tx/v1/send', {
       method: 'POST',
