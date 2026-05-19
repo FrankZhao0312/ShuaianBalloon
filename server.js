@@ -77,7 +77,8 @@ if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) 
     },
     connectionTimeout: 10000,  // 连接超时 10 秒
     greetingTimeout: 10000,     // 问候超时 10 秒
-    socketTimeout: 20000        // 套接字超时 20 秒
+    socketTimeout: 20000,       // 套接字超时 20 秒
+    family: 4                   // 强制使用 IPv4（避免 IPv6 连接问题）
   });
   console.log('✅ 邮件传输器初始化成功');
 } else {
