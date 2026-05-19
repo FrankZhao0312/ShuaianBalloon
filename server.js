@@ -76,6 +76,41 @@ console.log('✅ 邮件配置已加载:', {
 });
 
 const sendEmail = async (options) => {
+  // 优先尝试标准 SMTP（如果配置了）
+  if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+    try {
+      const nodemailer = require('nodemailer');
+      
+      const transporter = nodemailer.createTransport({
+        host: process.env.EMAIL_HOST,
+        port: parseInt(process.env.EMAIL_PORT) || 587,
+        secure: process.env.EMAIL_SECURE === 'true',
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
+        },
+        requireTLS: true,
+        timeout: 30000,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
+
+      const mailOptions = {
+        from: emailConfig.from,
+        to: emailConfig.to,
+        subject: options.subject,
+        html: options.html
+      };
+
+      const info = await transporter.sendMail(mailOptions);
+      console.log('📧 SMTP 邮件发送成功:', info.messageId);
+      return true;
+    } catch (error) {
+      console.error('❌ SMTP 邮件发送失败:', error.message || error);
+    }
+  }
+
   // 优先尝试 SendGrid（如果配置了）
   if (process.env.SENDGRID_API_KEY) {
     try {
@@ -117,7 +152,7 @@ const sendEmail = async (options) => {
       content: [{ type: 'text/html', value: options.html }]
     };
 
-    console.log('�📤 正在发送邮件到:', emailConfig.to);
+    console.log('�� 正在发送邮件到:', emailConfig.to);
 
     const response = await fetch('https://api.mailchannels.net/tx/v1/send', {
       method: 'POST',
