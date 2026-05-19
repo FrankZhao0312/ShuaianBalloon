@@ -64,9 +64,20 @@ const initDatabase = async () => {
 // 启动时初始化数据库
 initDatabase();
 
-// 创建邮件传输器（带错误处理和超时配置）
+// 创建邮件传输器（支持 SendGrid 和标准 SMTP）
 let transporter = null;
-if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+if (process.env.SENDGRID_API_KEY) {
+  // 使用 SendGrid
+  transporter = nodemailer.createTransport({
+    service: 'SendGrid',
+    auth: {
+      user: 'apikey',
+      pass: process.env.SENDGRID_API_KEY
+    }
+  });
+  console.log('✅ SendGrid 邮件传输器初始化成功');
+} else if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  // 使用标准 SMTP
   transporter = nodemailer.createTransport({
     host: process.env.EMAIL_HOST,
     port: parseInt(process.env.EMAIL_PORT) || 465,
@@ -75,12 +86,12 @@ if (process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) 
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
     },
-    connectionTimeout: 10000,  // 连接超时 10 秒
-    greetingTimeout: 10000,     // 问候超时 10 秒
-    socketTimeout: 20000,       // 套接字超时 20 秒
-    family: 4                   // 强制使用 IPv4（避免 IPv6 连接问题）
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 20000,
+    family: 4
   });
-  console.log('✅ 邮件传输器初始化成功');
+  console.log('✅ SMTP 邮件传输器初始化成功');
 } else {
   console.warn('⚠️ 邮件配置不完整，邮件发送功能已禁用');
 }
@@ -93,8 +104,8 @@ const sendEmail = async (options) => {
   
   try {
     const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO || process.env.EMAIL_USER,
+      from: process.env.SENDGRID_FROM || process.env.EMAIL_USER,
+      to: process.env.EMAIL_TO || process.env.SENDGRID_TO || process.env.EMAIL_USER,
       subject: options.subject,
       html: options.html
     };
@@ -183,8 +194,8 @@ app.post('/api/contact', async (req, res) => {
     }
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: process.env.EMAIL_TO || process.env.EMAIL_USER,
+      from: process.env.SENDGRID_FROM || process.env.EMAIL_USER,
+      to: process.env.EMAIL_TO || process.env.SENDGRID_TO || process.env.EMAIL_USER,
       subject: '📩 新的客户联系表单提交',
       html: `
         <h3>收到新的客户联系</h3>
